@@ -1,0 +1,92 @@
+---
+title: "Coursera - Practical Machine Learning"
+author: "R. Zemblys"
+date: "16/05/2015"
+output: html_document
+---
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+```{r}
+library(caret)
+setwd("/media/Data/workshop/sci/coursera/pml")
+data=read.table("pml-training.csv",header=T,sep=",")
+
+data=data[data$new_window=="no",]
+
+#exclude_vars = c("max", "min", "amplitude", "")
+#vars = grep(c("^max"), names(data), value=TRUE)
+
+nsv = nearZeroVar(data, saveMetrics=TRUE)
+vars=names(data)[!nsv$nzv]
+rem_vars = c("X","total_accel_belt","num_window",  "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp")
+vars = vars[!(vars %in% rem_vars)]
+
+data=data[,vars]
+
+
+inTrain = createDataPartition(data$classe, p = 0.75, list=FALSE)
+working = data[ inTrain,]
+
+validation = data[-inTrain,]
+inTrain = createDataPartition(working$classe, p = 0.75, list=FALSE)
+training = working[ inTrain,]
+testing = working[-inTrain,]
+
+table(training$classe, training$user_name)
+
+#random trees
+
+#modFit1=train(classe~., method='rf', data=training)
+load("modFit1")
+
+#library('randomForest')
+#modFit2=randomForest(classe~., data=training)
+load("modFit2")
+
+#modFitGBM=train(classe~., method='gbm', data=training)
+#save(modFitGBM, file="modFitGBM")
+load("modFitGBM")
+
+#modFitLDA=train(classe~., method='lda', data=training)
+#save(modFitLDA, file="modFitLDA")
+load("modFitLDA")
+
+pred1 = predict(modFit1, testing)
+pred2 = predict(modFit2, testing)
+predGBM = predict(modFitGBM, testing)
+predLDA = predict(modFitLDA, testing)
+
+
+#confusionMatrix(testing$classe,pred1)
+#confusionMatrix(testing$classe,pred2)
+#confusionMatrix(testing$classe,predGBM)
+#confusionMatrix(testing$classe,predLDA)
+
+#combine predictors
+#predDF <- data.frame(pred1,pred2,predGBM,classe=testing$classe)
+#combModFit <- train(classe ~.,method="rf",data=predDF)
+#save(combModFit, file="combModFit_4")
+#load("combModFit_4")
+#combPred <- predict(combModFit,predDF)
+#confusionMatrix(testing$classe ,combPred)
+
+#out of sample error
+#pred1V <- predict(modFit1,validation)
+#pred2V <- predict(modFit2,validation)
+#predGBMV <- predict(modFitGBM,validation)
+#predLDAV <- predict(modFitLDA,validation)
+
+
+#predVDF <- data.frame(pred1V,pred2V,predGBMV, predLDAV)
+#combPredV <- predict(combModFit,predVDF)
+
+#confusionMatrix(combPredV, validation$classe)
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
