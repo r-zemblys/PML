@@ -5,88 +5,167 @@ date: "16/05/2015"
 output: html_document
 ---
 
-Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+Participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+The goal of this project is to predict the manner in which participants did the exercise.
 
-```{r}
-library(caret)
+```{r, echo=FALSE, message=FALSE}
 setwd("/media/Data/workshop/sci/coursera/pml")
+printf <- function(...)print(sprintf(...))
+```
+
+#Load required packages
+```{r, message=FALSE}
+library(caret)
+```
+
+#Load and clean data
+```{r}
+set.seed(1234)
 data=read.table("pml-training.csv",header=T,sep=",")
 
-data=data[data$new_window=="no",]
+nsv = nearZeroVar(data, saveMetrics=TRUE) #find near zero variance predictors (including fields with NaNs)
+vars=names(data)[!nsv$nzv] #save non-zero variance predictors
 
-#exclude_vars = c("max", "min", "amplitude", "")
-#vars = grep(c("^max"), names(data), value=TRUE)
-
-nsv = nearZeroVar(data, saveMetrics=TRUE)
-vars=names(data)[!nsv$nzv]
+#indicate "info" variables
 rem_vars = c("X","total_accel_belt","num_window",  "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp")
-vars = vars[!(vars %in% rem_vars)]
+vars = vars[!(vars %in% rem_vars)] #remove "info" variables
 
-data=data[,vars]
+data=data[,vars]  #leave only relevant predictors 
+```
 
+#Cross-validation
+I split data into *working* and *validation* sets (75% and 25% respectively) using random sampling, because task is to predict the manner in which participants did the exercise (*classe*) using one, probably random, sample. And then I split *working*  set into *training* and *testing* sets (75% and 25% respectively). This will allow to test multiple models and choose the best performing one, or combine models to get more accurate estimation of *out of sample error*.
+```{r}
+inWorking = createDataPartition(data$classe, p = 0.75, list=FALSE)
+working = data[ inWorking,]
+validation = data[-inWorking,]
 
-inTrain = createDataPartition(data$classe, p = 0.75, list=FALSE)
-working = data[ inTrain,]
-
-validation = data[-inTrain,]
 inTrain = createDataPartition(working$classe, p = 0.75, list=FALSE)
 training = working[ inTrain,]
 testing = working[-inTrain,]
+```
+###Check much data there is in every set
+```{r}
+setSplit = data.frame(classe=data$classe, set=0)
+setSplit$set[-inWorking] = 'Validation'
+setSplit$set[inWorking][inTrain] = 'Training'
+setSplit$set[inWorking][-inTrain] = 'Testing'
 
-table(training$classe, training$user_name)
+setSplitTbl = table(setSplit)
+barplot(setSplitTbl, legend = rownames(setSplitTbl), 
+        col=terrain.colors(length(unique(setSplit$classe))),
+        main='Distribution of datasets', ylab='Count',
+        args.legend = list(x="top", horiz = TRUE, box.lwd=NA, title='classe'),
+        ylim=c(0,15000),
+)
+```
 
-#random trees
+#Prediction
+I use 3 different models with default parameters: Random Forest, Stochastic Gradient Boosting and Linear Discriminant Analysis. 
+```{r, message=FALSE}
+#Random Forest
+#modFitRF=train(classe~., method='rf', data=training)
+#save(modFitRF, file="modFitRF") #Its always a good idea to save computed model for later use.
+load("modFitRF")
 
-#modFit1=train(classe~., method='rf', data=training)
-load("modFit1")
-
-#library('randomForest')
-#modFit2=randomForest(classe~., data=training)
-load("modFit2")
-
+#Stochastic Gradient Boosting 
 #modFitGBM=train(classe~., method='gbm', data=training)
 #save(modFitGBM, file="modFitGBM")
 load("modFitGBM")
 
+#Linear Discriminant Analysis
 #modFitLDA=train(classe~., method='lda', data=training)
 #save(modFitLDA, file="modFitLDA")
 load("modFitLDA")
 
-pred1 = predict(modFit1, testing)
-pred2 = predict(modFit2, testing)
+#Classe prediction with 3 different models
+predRF = predict(modFitRF, testing)
 predGBM = predict(modFitGBM, testing)
 predLDA = predict(modFitLDA, testing)
+```
 
+###Accuracy of prediction with different models
+```{r, message=FALSE}
+#Acccuracy calculation on testing set
+cmRF = confusionMatrix(testing$classe,predRF)
+cmGBM = confusionMatrix(testing$classe,predGBM)
+cmLDA = confusionMatrix(testing$classe,predLDA)
 
-#confusionMatrix(testing$classe,pred1)
-#confusionMatrix(testing$classe,pred2)
-#confusionMatrix(testing$classe,predGBM)
-#confusionMatrix(testing$classe,predLDA)
+printf('Accuracy of Random Forest model: %.5f', cmRF$overall["Accuracy"])
+printf('Accuracy of Stochastic Gradient Boosting model: %.5f', cmGBM$overall["Accuracy"])
+printf('Accuracy of Linear Discriminant Analysis model: %.5f', cmLDA$overall["Accuracy"])
 
-#combine predictors
-#predDF <- data.frame(pred1,pred2,predGBM,classe=testing$classe)
-#combModFit <- train(classe ~.,method="rf",data=predDF)
-#save(combModFit, file="combModFit_4")
-#load("combModFit_4")
-#combPred <- predict(combModFit,predDF)
-#confusionMatrix(testing$classe ,combPred)
+```
 
+#Combined model
+I combine chosen models, hoping that it will give more accurate results.
+```{r}
+#Combine predictors
+predDF = data.frame(predRF,predGBM,predLDA,classe=testing$classe)
+#combModFit = train(classe ~.,method="rf",data=predDF)
+#save(combModFit, file="combModFit")
+load("combModFit")
+
+combPred = predict(combModFit,predDF)
+cmCombPred = confusionMatrix(testing$classe ,combPred)
+
+printf('Accuracy of combined model: %.5f', cmCombPred$overall["Accuracy"])
+
+```
+
+Accuracy of combined model is lower than that of Random Forest, therefore I choose Random Forest to be my final model.
+
+#Out of sample error
+Here I check accuracy of my model on *validation* set.
+```{r}
 #out of sample error
-#pred1V <- predict(modFit1,validation)
-#pred2V <- predict(modFit2,validation)
-#predGBMV <- predict(modFitGBM,validation)
-#predLDAV <- predict(modFitLDA,validation)
+predRFV = predict(modFitRF,validation)
+cmRFV=confusionMatrix(predRFV, validation$classe)
+printf('Out of sample accuracy: %.5f', cmRFV$overall["Accuracy"])
 
-
-#predVDF <- data.frame(pred1V,pred2V,predGBMV, predLDAV)
-#combPredV <- predict(combModFit,predVDF)
-
-#confusionMatrix(combPredV, validation$classe)
 ```
 
-You can also embed plots, for example:
+And finnaly I check out of sample accuracy of other models.
 
-```{r, echo=FALSE}
-plot(cars)
+```{r}
+predGBMV = predict(modFitGBM,validation)
+predLDAV = predict(modFitLDA,validation)
+
+predVDF <- data.frame(predRF=predRFV,predGBM=predGBMV, predLDA=predLDAV)
+combPredV <- predict(combModFit,predVDF)
+
+cmGBMV=confusionMatrix(predGBMV, validation$classe)
+cmLDAV=confusionMatrix(predLDAV, validation$classe)
+cmCombPredV=confusionMatrix(combPredV, validation$classe)
+
+printf('Out of sample accuracy of Stochastic Gradient Boosting model: %.5f', cmGBMV$overall["Accuracy"])
+printf('Out of sample accuracy of Linear Discriminant Analysis model: %.5f', cmLDAV$overall["Accuracy"])
+printf('Out of sample accuracy of combined model: %.5f', cmCombPredV$overall["Accuracy"])
 ```
 
+Aparentely Random Forest model was a good choise, because on *validation* set it is more acurate comparing to other models, including combined model. 
+
+#Prediction of classe on 20 test cases 
+
+```{r}
+testData=read.table("pml-testing.csv",header=T,sep=",") #load test data
+testData=rename(testData, c("problem_id"="classe")) #
+testData=testData[,vars] #select relevant predictors
+
+predTEST = predict(modFitRF, testData)
+answers = data.frame(problem_id=testData$classe, answer=predTEST)
+answers
+```
+
+```{r, echo=FALSE, message=FALSE}
+#write answers
+#pml_write_files = function(x){
+#  n = length(x)
+#  for(i in 1:n){
+#    filename = paste0("problem_id_",i,".txt")
+#    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+#  }
+#}
+
+#pml_write_files(predTEST)
+```
